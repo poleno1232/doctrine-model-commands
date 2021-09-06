@@ -2,7 +2,11 @@
     "name": "polion1232/doctrine-orm-model-generator",
     "description": "Shortcut in creating models",
     "require": {
-        "doctrine/orm": "2.9.5"
+        "doctrine/orm": "2.9.5",
+        "symfony/dotenv": "5.4.x-dev"
+    },
+    "autoload": {
+        "psr-4": {"Polion1232\\": "src/"}
     },
     "minimum-stability": "dev"
 }
