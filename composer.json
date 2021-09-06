@@ -1,0 +1,8 @@
+{
+    "name": "polion1232/doctrine-orm-model-generator",
+    "description": "Shortcut in creating models",
+    "require": {
+        "doctrine/orm": "2.9.5"
+    },
+    "minimum-stability": "dev"
+}
