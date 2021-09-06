@@ -2,8 +2,25 @@
 <?php
 require_once __DIR__ . '/../vendor/autoload.php';
 
+use Doctrine\DBAL\DriverManager;
+use Polion1232\Commands\MakeModelFromTableCommand;
 use Symfony\Component\Console\Application;
+use Symfony\Component\Dotenv\Dotenv;
 
 $app = new Application();
+$dotEnv = new Dotenv();
+$dotEnv->load(__DIR__ . '/../.env.local');
+
+$connection = DriverManager::getConnection(
+    [
+        'driver' => $_ENV['DB_DRIVER'],
+        'path' => $_ENV['DB_PATH'],
+        'dbname' => $_ENV['DB_NAME'],
+        'user' => $_ENV['DB_USER'],
+        'password' => $_ENV['DB_PASS'],
+    ]
+);
+
+$app->add(new MakeModelFromTableCommand($connection));
 
 $app->run();
