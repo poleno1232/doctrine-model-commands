@@ -2,16 +2,24 @@
 
 namespace Test\Test;
 
+use Doctrine\ORM\Mapping as ORM;
+
 /**
  * @ORM\Entity
- * @ORM\Table(name="app_annie_companies")
+ * @ORM\Table(name="{{table}}")
  */
 class Test
 {
-    /**
-     * @ORM\Id
-     * @ORM\Column(type="integer")
-     * @ORM\GeneratedValue(strategy="AUTO")
-     */
-    protected $id;{{replaceableData}}
+    {{replaceableData}}
+    public function __get($name)
+    {
+        return $this->{$name};
+    }
+
+    public function __set($name, $value)
+    {
+        $this->{$name} = $value;
+
+        return $this;
+    }
 }
