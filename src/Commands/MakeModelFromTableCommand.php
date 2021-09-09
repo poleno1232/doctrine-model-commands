@@ -30,6 +30,14 @@ class MakeModelFromTableCommand extends AbstractCommand
     protected const FOREIGN = 'foreign';
     protected const INDEX = 'index';
 
+    protected const ONE_TO_ONE = '@OneToOne';
+    protected const ONE_TO_MANY = '@OneToMany';
+
+    /**
+     * @var string[]ForeignKeyConstraint[]
+     */
+    protected $tablesKeys = [];
+
     protected function configure()
     {
         $this
@@ -57,7 +65,7 @@ class MakeModelFromTableCommand extends AbstractCommand
         }
 
         $constraints = array_merge(
-            $this->schemaManager->listTableForeignKeys($table),
+            $this->retrieveTableForeignKeys($table),
             $this->schemaManager->listTableIndexes($table)
         );
         $constraints = $this->retrieveColumnNamesFromConstraints($constraints);
@@ -129,8 +137,30 @@ class MakeModelFromTableCommand extends AbstractCommand
 
             switch (true) {
                 case $constraint instanceof ForeignKeyConstraint:
+                    $table = $constraint->getForeignTableName();
+                    $foreignConstraints = $this->retrieveTableForeignKeys($table);
+
                     foreach ($data as $name) {
-                        $columns['foreigns'][$name]['table'] = $constraint->getForeignTableName();
+                        $columns['foreigns'][$name]['table'] = $table;
+
+                        //Defaults to One-to-Many
+                        $relationType = self::ONE_TO_MANY;
+
+                        if (empty($foreignConstraints)) {
+                            $columns['foreigns'][$name]['relation'] = $relationType;
+
+                            break;
+                        }
+
+                        foreach ($foreignConstraints as $foreignConstraint) {
+                            if (!in_array($name, $foreignConstraint->getUnquotedForeignColumns())) {
+                                $relationType = self::ONE_TO_MANY;
+                            } else {
+                                $relationType = self::ONE_TO_ONE;
+                            }
+                        }
+
+                        $columns['foreigns'][$name]['relation'] = $relationType;
                     }
 
                     break;
@@ -151,6 +181,17 @@ class MakeModelFromTableCommand extends AbstractCommand
         return $columns;
     }
 
+    protected function retrieveTableForeignKeys(string $table)
+    {
+        if (isset($this->tablesKeys[$table])) {
+            return $this->tablesKeys[$table];
+        }
+
+        $this->tablesKeys[$table] = $this->schemaManager->listTableForeignKeys($table);
+
+        return $this->tablesKeys[$table];
+    }
+
     protected function processAdditionals(?array $data)
     {
         if (is_null($data)) {
@@ -164,6 +205,7 @@ class MakeModelFromTableCommand extends AbstractCommand
         return [
             'type' => self::FOREIGN,
             'data' => $data['table'],
+            'relation' => $data['relation'],
         ];
     }
 
@@ -171,7 +213,11 @@ class MakeModelFromTableCommand extends AbstractCommand
     {
         switch ($orm['type']) {
             case self::FOREIGN:
-                return "@OneToOne(targetEntity=\"{$orm['data']}\", inversedBy=\"{$thisTable}\")";
+                if ($orm['relation'] === self::ONE_TO_ONE) {
+                    return "@OneToOne(targetEntity=\"{$orm['data']}\", inversedBy=\"{$thisTable}\")";
+                } else {
+                    return "@OneToMany(targetEntity=\"{$orm['data']}\", mappedBy=\"{$thisTable}\")";
+                }
             case self::INDEX:
                 return '@ORM\Id
      * @ORM\GeneratedValue(strategy="AUTO")';
