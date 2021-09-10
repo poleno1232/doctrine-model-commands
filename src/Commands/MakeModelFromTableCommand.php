@@ -5,7 +5,8 @@ namespace Polion1232\Commands;
 use Doctrine\DBAL\Schema\Column;
 use Doctrine\DBAL\Schema\ForeignKeyConstraint;
 use Doctrine\DBAL\Schema\Index;
-use Exception;
+use Polion1232\Exceptions\TableNotFoundException;
+use Polion1232\Exceptions\UnknowIndetifierException;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -38,7 +39,7 @@ class MakeModelFromTableCommand extends AbstractCommand
      */
     protected $tablesKeys = [];
 
-    protected function configure()
+    protected function configure(): void
     {
         $this
             ->setName('make:model-from-db')
@@ -47,7 +48,7 @@ class MakeModelFromTableCommand extends AbstractCommand
             ->addArgument('path');
     }
 
-    protected function execute(InputInterface $input, OutputInterface $output)
+    protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $table = $input->getArgument('table');
         $path = $input->getArgument('path');
@@ -60,8 +61,7 @@ class MakeModelFromTableCommand extends AbstractCommand
         $columns = $this->schemaManager->listTableColumns($table);
 
         if (empty($columns)) {
-            // TableNotFoundException has multiple contraditing constructors, apparently
-            throw new Exception("Table does not exist");
+            throw new TableNotFoundException();
         }
 
         $constraints = array_merge(
@@ -79,7 +79,7 @@ class MakeModelFromTableCommand extends AbstractCommand
             }
 
             if (in_array($name, array_keys($constraints['indexes']))) {
-                $additionalOrm = [];
+                $additionalOrm = $constraints['indexes'][$name];
             }
 
             $columnsData[$this->normalizeName($name)] = $this->formatElement($column->getType(), $name, $additionalOrm);
@@ -106,7 +106,7 @@ class MakeModelFromTableCommand extends AbstractCommand
         return 0;
     }
 
-    protected function formatElement(string $type, string $field, array $additional = null)
+    protected function formatElement(string $type, string $field, array $additional = null): array
     {
         return array_merge(
             $this->normalizeType($type),
@@ -115,17 +115,17 @@ class MakeModelFromTableCommand extends AbstractCommand
         );
     }
 
-    protected function normalizeType(string $type)
+    protected function normalizeType(string $type): string
     {
         return self::TYPE_TABLE[$type];
     }
 
-    protected function normalizeName(string $field)
+    protected function normalizeName(string $field): string
     {
         return str_replace('_', '', ucwords($field, '_'));
     }
 
-    protected function retrieveColumnNamesFromConstraints(array $constraints)
+    protected function retrieveColumnNamesFromConstraints(array $constraints): array
     {
         $columns = [
             'foreigns' => [],
@@ -142,6 +142,7 @@ class MakeModelFromTableCommand extends AbstractCommand
 
                     foreach ($data as $name) {
                         $columns['foreigns'][$name]['table'] = $table;
+                        $columns['foreigns'][$name]['type'] = self::FOREIGN;
 
                         //Defaults to One-to-Many
                         $relationType = self::ONE_TO_MANY;
@@ -171,7 +172,9 @@ class MakeModelFromTableCommand extends AbstractCommand
                     }
 
                     foreach ($data as $name) {
-                        $columns['indexes'][$name] = ['test'];
+                        $columns['indexes'][$name]['type'] = self::INDEX;
+                        $columns['indexes'][$name]['primary'] = $constraint->isPrimary();
+                        $columns['indexes'][$name]['unique'] = $constraint->isUnique();
                     }
 
                     break;
@@ -181,7 +184,7 @@ class MakeModelFromTableCommand extends AbstractCommand
         return $columns;
     }
 
-    protected function retrieveTableForeignKeys(string $table)
+    protected function retrieveTableForeignKeys(string $table): array
     {
         if (isset($this->tablesKeys[$table])) {
             return $this->tablesKeys[$table];
@@ -192,24 +195,27 @@ class MakeModelFromTableCommand extends AbstractCommand
         return $this->tablesKeys[$table];
     }
 
-    protected function processAdditionals(?array $data)
+    protected function processAdditionals(?array $data): array
     {
         if (is_null($data)) {
             return ['type' => null];
         }
 
-        if (empty($data)) {
-            return ['type' => self::INDEX];
+        switch ($data['type']) {
+            case self::INDEX:
+                return $data;
+            case self::FOREIGN:
+                return [
+                    'type' => self::FOREIGN,
+                    'data' => $data['table'],
+                    'relation' => $data['relation'],
+                ];
         }
 
-        return [
-            'type' => self::FOREIGN,
-            'data' => $data['table'],
-            'relation' => $data['relation'],
-        ];
+        throw (new UnknowIndetifierException());
     }
 
-    protected function transformOrm(array $orm, string $thisTable)
+    protected function transformOrm(array $orm, string $thisTable): string
     {
         switch ($orm['type']) {
             case self::FOREIGN:
@@ -219,8 +225,16 @@ class MakeModelFromTableCommand extends AbstractCommand
                     return "@OneToMany(targetEntity=\"{$orm['data']}\", mappedBy=\"{$thisTable}\")";
                 }
             case self::INDEX:
-                return '@ORM\Id
+                if ($orm['primary']) {
+                    return '@ORM\Id
      * @ORM\GeneratedValue(strategy="AUTO")';
+                }
+
+                if ($orm['unique']) {
+                    return '@UniqueIndex(order="asc")';
+                }
+
+                throw (new UnknowIndetifierException());
             default:
                 return '';
         }
